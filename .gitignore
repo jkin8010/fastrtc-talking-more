@@ -1,0 +1,23 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+.gradio/
+audio_debug/
+
+# Virtual environments
+.venv
+
+# Environment variables
+.env
+
+# Model weights
+.modelscope/
+
+# Hugging Face cache
+.huggingface/
+
+# Local model weights

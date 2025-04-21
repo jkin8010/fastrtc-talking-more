@@ -1,0 +1,53 @@
+[project]
+name = "fastrtc-zh-demo"
+version = "0.1.0"
+description = "基于Fastrtc、Ollama、FunASR和ChatTTS的大模型语音实时对话DEMO"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "addict>=2.4.0",
+    "chattts",
+    "datasets==2.18.0",
+    "distil-whisper-fastrtc>=0.1.0.post1",
+    "fastrtc[stt,tts,vad]==0.0.21",
+    "funasr>=1.2.6",
+    "kantts @ git+https://github.com/alibaba-damo-academy/KAN-TTS.git",
+    "matplotlib>=3.10.1",
+    "modelscope>=1.25.0",
+    "openai>=1.75.0",
+    "simplejson>=3.20.1",
+    "sortedcontainers>=2.4.0",
+    "torch>=2.2.1",
+    "torchaudio>=2.2.1",
+    "vector-quantize-pytorch>=1.22.15",
+    "vocos>=0.1.0",
+    "wetextprocessing>=1.0.4.1",
+    "fastapi>=0.110.0",
+    "uvicorn>=0.27.1",
+    "pydantic>=2.6.3",
+    "numpy==2.0.2",
+    "silero-vad>=5.1.2",
+    "onnxruntime>=1.21.1",
+]
+
+[project.scripts]
+start = "main:main"
+
+[tool.uv.sources]
+chattts = { path = "./packages/ChatTTS/" }
+
+[[tool.uv.index]]
+url = "https://mirrors.aliyun.com/pypi/simple/"
+default = true
+trusted-host = ["mirrors.aliyun.com"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+sources = ["src"]
+include = ["src/**"]
