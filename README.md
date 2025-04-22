@@ -1,19 +1,20 @@
 # FastRTC 中文大模型对话示例
 
-基于 FastRTC、FunASR、ChatTTS 和 Qwen2.5 的实时语音对话示例。
+基于 FastRTC、FunASR、MegaTTS 和 Qwen2.5 的实时语音对话应用。
 
 ## 功能特点
 
 - 🎙️ 实时语音对话：支持实时语音输入和输出
 - 🤖 智能对话：基于 Ollama（Qwen2.5） 大语言模型
 - 🗣️ 语音识别：使用 FunASR 进行中文语音识别
-- 🔊 语音合成：使用 ChatTTS 进行中文语音合成
+- 🔊 语音合成：使用 MegaTTS/ChatTTS 进行中文语音合成
 - 🌐 WebRTC 支持：基于 FastRTC 实现实时音视频通信
 
 ## 依赖项
 
 - [FastRTC](https://github.com/gradio-app/fastrtc)：实时音视频通信框架
 - [FunASR](https://github.com/modelscope/FunASR)：中文语音识别模型
+- [MegaTTS](https://github.com/bytedance/MegaTTS3)：字节跳动的智能语音合成模型
 - [ChatTTS](https://github.com/2noise/ChatTTS)：中文语音合成模型
 - [ChatTTS_Speaker](https://github.com/6drf21e/ChatTTS_Speaker)：ChatTTS 说话人模型
 - Qwen2.5：通义千问 2.5 大语言模型
@@ -23,7 +24,7 @@
 1. 克隆项目并安装依赖：
 
 ```bash
-git clone https://github.com/jkin8010/fastrtc-zh-demo.git
+git clone https://github.com/jkin8010/fastrtc-talking-more.git
 cd fastrtc-zh-demo
 uv sync
 ```
@@ -61,6 +62,7 @@ uv run start
 
 - [FastRTC](https://github.com/gradio-app/fastrtc)：实时音视频通信框架
 - [FunASR](https://github.com/modelscope/FunASR)：中文语音识别模型
+- [MegaTTS](https://github.com/bytedance/MegaTTS3)：字节跳动的智能语音合成模型
 - [ChatTTS](https://github.com/2noise/ChatTTS)：中文语音合成模型
 - [ChatTTS_Speaker](https://github.com/6drf21e/ChatTTS_Speaker)：ChatTTS 说话人模型
 
