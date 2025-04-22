@@ -43,55 +43,77 @@ class EchoHandler:
         """
         self.logger.info("Detected pause (or stop word + pause), starting echo function.")
         try:
-            # prompt = self.stt_model.stt(audio)
-            # print(f"STT result: {prompt}")
+            prompt = self.stt_model.stt(audio)
+            print(f"STT result: {prompt}")
 
-            # if not prompt or prompt.strip() == "":
-            #     self.logger.warning("STT result is empty or whitespace, skipping LLM call.")
-            #     return iter([])
+            if not prompt or prompt.strip() == "":
+                self.logger.warning("STT result is empty or whitespace, skipping LLM call.")
+                return iter([])
 
-            # response_stream = self.llm_client.chat.completions.create(
-            #     model="qwen2.5",
-            #     messages=[{"role": "user", "content": prompt}],
-            #     max_tokens=200,
-            #     stream=True
-            # )
+            response_stream = self.llm_client.chat.completions.create(
+                model="qwen2.5",
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=200,
+                stream=True
+            )
 
-            # # Process LLM stream and collect full response
-            # full_llm_response = ""
-            # self.logger.info("Starting to receive LLM stream.")
-            # print("LLM response stream: ", end="", flush=True)
-            # for chunk in response_stream:
-            #     delta = chunk.choices[0].delta
-            #     if delta and delta.content:
-            #         text_chunk = delta.content
-            #         print(text_chunk, end="", flush=True) # Print immediately
-            #         full_llm_response += text_chunk
+            # Process LLM stream and collect full response
+            full_llm_response = ""
+            self.logger.info("Starting to receive LLM stream.")
+            print("LLM response stream: ", end="", flush=True)
+            for chunk in response_stream:
+                delta = chunk.choices[0].delta
+                if delta and delta.content:
+                    text_chunk = delta.content
+                    print(text_chunk, end="", flush=True) # Print immediately
+                    full_llm_response += text_chunk
 
-            # self.logger.info(f"LLM full response (logged): {full_llm_response}")
+            self.logger.info(f"LLM full response (logged): {full_llm_response}")
 
-            # # Check if the final response is empty after streaming
-            # if not full_llm_response.strip():
-            #     self.logger.warning("LLM response was empty or whitespace after streaming, skipping TTS.")
-            #     return iter([])
+            # Check if the final response is empty after streaming
+            if not full_llm_response.strip():
+                self.logger.warning("LLM response was empty or whitespace after streaming, skipping TTS.")
+                return iter([])
 
-            # # # Split the response by common punctuation marks using regex
-            # llm_response_array = re.split(r'[。！]', full_llm_response)
-            # # Filter out empty or whitespace-only strings that might result from splitting
-            # segments = [s.strip() for s in llm_response_array if s and s.strip()]
-
-            # if not segments:
-            #     self.logger.warning("Response became empty after splitting and filtering, skipping TTS.")
-            #     return iter([])
+            # 按照多种标点符号分割文本
+            llm_response_array = re.split(r'([。！？；])', full_llm_response)
             
-            segments = ["你好，我是MegaTTS，一个强大的语音合成模型！"]
+            # 将分割后的文本和标点重新组合
+            segments = []
+            i = 0
+            while i < len(llm_response_array) - 1:
+                if i + 1 < len(llm_response_array):
+                    # 文本加上后面的标点
+                    segment = llm_response_array[i] + llm_response_array[i+1]
+                    segments.append(segment)
+                    i += 2
+                else:
+                    # 处理最后一个没有标点的文本块
+                    segments.append(llm_response_array[i])
+                    i += 1
+            
+            # 如果还有剩余文本（没有标点符号结尾的情况）
+            if i < len(llm_response_array):
+                segments.append(llm_response_array[i])
 
+            # 过滤掉空段落
+            segments = [s.strip() for s in segments if s and s.strip()]
+
+            if not segments:
+                self.logger.warning("Response became empty after splitting and filtering, skipping TTS.")
+                return iter([])
+            
             self.logger.info(f"Starting TTS stream with {len(segments)} segments.")
             for segment in segments:
                 if segment.strip() == "":
                     continue
-                # Add a period back to potentially help TTS phrasing
-                tts_input = segment + "。"
+                # 检查最后一个字符是否已经是标点符号
+                last_char = segment[-1] if segment else ""
+                if last_char in ["。", "！", "？", "，", "；", "：", ".", "!", "?", ",", ";", ":"]:
+                    tts_input = segment
+                else:
+                    # 只有在没有标点的情况下才添加句号
+                    tts_input = segment + "。"
                 self.logger.debug(f"TTS processing segment: '{tts_input}'") # Log the input to TTS
                 for audio_chunk in self.tts_model.stream_tts_sync(tts_input):
                     yield audio_chunk

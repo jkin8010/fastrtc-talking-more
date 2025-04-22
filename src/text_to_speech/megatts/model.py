@@ -11,7 +11,8 @@ from langdetect import detect as classify_language
 from megatts3.tts.infer_cli import MegaTTS3DiTInfer
 from text_to_speech import TTSModel, TTSOptions
 from modelscope import snapshot_download
-from fastrtc import AdditionalOutputs
+import librosa
+import io
 
 logger = getLogger(__name__)
 
@@ -59,7 +60,7 @@ class MegaTTSModel(TTSModel):
 
     def tts(
         self, text: str, options: TTSOptions | None = None
-    ) -> tuple[int, NDArray[np.float32], AdditionalOutputs]:
+    ) -> tuple[int, NDArray[np.float32 | np.int16]]:
         if options is None:
             options = TTSOptions()
 
@@ -90,20 +91,25 @@ class MegaTTSModel(TTSModel):
             t_w=options.t_w,
         )
 
-        # Convert wav bytes to numpy array
-        wav_array = np.frombuffer(wav_bytes, dtype=np.float32)
-        return 24000, wav_array, AdditionalOutputs()
+        # 使用 librosa 加载音频数据，确保正确的采样率
+        wav_array, sr = librosa.load(io.BytesIO(wav_bytes), sr=24000)
+        
+        # 音频归一化
+        wav_array = wav_array / np.max(np.abs(wav_array))
+        wav_array = wav_array * 0.95  # 避免削波
+        
+        return 24000, wav_array.astype(np.float32)
 
     async def stream_tts(
         self, text: str, options: TTSOptions | None = None
-    ) -> AsyncGenerator[tuple[int, NDArray[np.float32], AdditionalOutputs], None]:
+    ) -> AsyncGenerator[tuple[int, NDArray[np.float32 | np.int16]], None]:
         if options is None:
             options = TTSOptions()
         # 强制设置 stream 为 True 以便 tts 返回生成器
         options.stream = True
             
         logger.info(f"Start voice inference {text}.")
-        sample_rate, wav_generator, additional_outputs = self.tts(text, options)
+        sample_rate, wav_generator = self.tts(text, options)
 
         # 直接迭代 tts 返回的生成器
         for wav_chunk in wav_generator:
@@ -119,34 +125,39 @@ class MegaTTSModel(TTSModel):
             
             # 确保是一维数组
             wav_chunk = wav_chunk.squeeze()
-            yield sample_rate, wav_chunk, additional_outputs
+            yield sample_rate, wav_chunk
 
     def stream_tts_sync(
         self, text: str, options: TTSOptions | None = None
-    ) -> Generator[tuple[int, NDArray[np.float32], AdditionalOutputs], None, None]:
+    ) -> Generator[tuple[int, NDArray[np.float32 | np.int16]], None, None]:
         if options is None:
             options = TTSOptions()
         # 强制设置 stream 为 True 以便 tts 返回生成器
         options.stream = True
             
-        sample_rate, wav_generator, additional_outputs = self.tts(text, options)
-
-        # 直接迭代 tts 返回的生成器
-        for wav_chunk in wav_generator:
-            # 确保音频块是 float32 类型
-            if hasattr(wav_chunk, 'dtype') and wav_chunk.dtype != np.float32:
-                wav_chunk = wav_chunk.astype(np.float32)
-
-            # 确保是单声道音频
-            if wav_chunk.ndim > 1:
-                # 如果是多通道情况，取平均值
-                wav_chunk = np.mean(wav_chunk, axis=0)
-                logger.debug("Converted multi-channel chunk to mono by averaging in sync stream")
+        sample_rate, wav_array = self.tts(text, options)
+        
+        # 确保音频数据是平面格式，形状为 (samples,)
+        if wav_array.ndim > 1:
+            wav_array = wav_array.squeeze()
+        
+        # 确保音频数据是float32格式
+        if wav_array.dtype != np.float32:
+            wav_array = wav_array.astype(np.float32)
+        
+        # 将音频数据分成小块
+        chunk_size = 1024  # 可以根据需要调整块大小
+        for i in range(0, len(wav_array), chunk_size):
+            chunk = wav_array[i:i + chunk_size]
+            if len(chunk) < chunk_size:
+                # 如果最后一个块不够大，用零填充
+                chunk = np.pad(chunk, (0, chunk_size - len(chunk)), mode='constant')
             
-            # 确保是一维数组
-            wav_chunk = wav_chunk.squeeze()
-         
-            yield sample_rate, wav_chunk, additional_outputs
+            # 将数据重塑为正确的格式 (samples,)
+            chunk = chunk.reshape(-1)
+            
+            # 返回格式：(sample_rate, audio_data)
+            yield sample_rate, chunk
 
 @lru_cache
 def get_tts_model(
@@ -162,12 +173,3 @@ def get_tts_model(
         A MegaTTSModel instance
     """
     return MegaTTSModel(device=device)
-
-if __name__ == "__main__":
-    m = get_tts_model()
-    sample_rate, audio_data, additional_outputs = m.tts("你好，我是MegaTTS，一个强大的语音合成模型！")
-    
-    # 保存音频
-    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-    save_wav(audio_data, os.path.join(project_root, "audio_debug", "output.wav"))
-    logger.info(f"音频已保存到 output.wav，采样率：{sample_rate}Hz")

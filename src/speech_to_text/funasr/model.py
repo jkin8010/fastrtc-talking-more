@@ -166,7 +166,7 @@ class FunASRSTT(STTModel):
                 sampling_rate=current_sample_rate, # 使用处理后的采样率
                 batch_size_s=300, 
                 batch_size_threshold_s=60, 
-                hotword='老六',
+                hotword='小宇',
             )
             logger.info(f"STT result: {result}")
             
