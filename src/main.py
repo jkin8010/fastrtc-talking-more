@@ -7,7 +7,7 @@ import torch
 import asyncio
 import numpy as np
 from fastrtc import (ReplyOnPause, Stream)
-from text_to_speech.chattts.model import get_tts_model, TTSModel
+from text_to_speech.megatts.model import get_tts_model, TTSModel
 from speech_to_text.funasr.model import get_stt_model, STTModel
 from openai import OpenAI
 from logging import getLogger
@@ -43,46 +43,48 @@ class EchoHandler:
         """
         self.logger.info("Detected pause (or stop word + pause), starting echo function.")
         try:
-            prompt = self.stt_model.stt(audio)
-            print(f"STT result: {prompt}")
+            # prompt = self.stt_model.stt(audio)
+            # print(f"STT result: {prompt}")
 
-            if not prompt or prompt.strip() == "":
-                self.logger.warning("STT result is empty or whitespace, skipping LLM call.")
-                return iter([])
+            # if not prompt or prompt.strip() == "":
+            #     self.logger.warning("STT result is empty or whitespace, skipping LLM call.")
+            #     return iter([])
 
-            response_stream = self.llm_client.chat.completions.create(
-                model="qwen2.5",
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=200,
-                stream=True
-            )
+            # response_stream = self.llm_client.chat.completions.create(
+            #     model="qwen2.5",
+            #     messages=[{"role": "user", "content": prompt}],
+            #     max_tokens=200,
+            #     stream=True
+            # )
 
-            # Process LLM stream and collect full response
-            full_llm_response = ""
-            self.logger.info("Starting to receive LLM stream.")
-            print("LLM response stream: ", end="", flush=True)
-            for chunk in response_stream:
-                delta = chunk.choices[0].delta
-                if delta and delta.content:
-                    text_chunk = delta.content
-                    print(text_chunk, end="", flush=True) # Print immediately
-                    full_llm_response += text_chunk
+            # # Process LLM stream and collect full response
+            # full_llm_response = ""
+            # self.logger.info("Starting to receive LLM stream.")
+            # print("LLM response stream: ", end="", flush=True)
+            # for chunk in response_stream:
+            #     delta = chunk.choices[0].delta
+            #     if delta and delta.content:
+            #         text_chunk = delta.content
+            #         print(text_chunk, end="", flush=True) # Print immediately
+            #         full_llm_response += text_chunk
 
-            self.logger.info(f"LLM full response (logged): {full_llm_response}")
+            # self.logger.info(f"LLM full response (logged): {full_llm_response}")
 
-            # Check if the final response is empty after streaming
-            if not full_llm_response.strip():
-                self.logger.warning("LLM response was empty or whitespace after streaming, skipping TTS.")
-                return iter([])
+            # # Check if the final response is empty after streaming
+            # if not full_llm_response.strip():
+            #     self.logger.warning("LLM response was empty or whitespace after streaming, skipping TTS.")
+            #     return iter([])
 
-            # # Split the response by common punctuation marks using regex
-            llm_response_array = re.split(r'[。！]', full_llm_response)
-            # Filter out empty or whitespace-only strings that might result from splitting
-            segments = [s.strip() for s in llm_response_array if s and s.strip()]
+            # # # Split the response by common punctuation marks using regex
+            # llm_response_array = re.split(r'[。！]', full_llm_response)
+            # # Filter out empty or whitespace-only strings that might result from splitting
+            # segments = [s.strip() for s in llm_response_array if s and s.strip()]
 
-            if not segments:
-                self.logger.warning("Response became empty after splitting and filtering, skipping TTS.")
-                return iter([])
+            # if not segments:
+            #     self.logger.warning("Response became empty after splitting and filtering, skipping TTS.")
+            #     return iter([])
+            
+            segments = ["你好，我是MegaTTS，一个强大的语音合成模型！"]
 
             self.logger.info(f"Starting TTS stream with {len(segments)} segments.")
             for segment in segments:
@@ -124,7 +126,7 @@ def main():
         base_url=os.getenv("OLLAMA_API_URL", "http://localhost:11434/v1/")
     )
     stt_model = get_stt_model()
-    tts_model = get_tts_model(device="cpu")
+    tts_model = get_tts_model(device="cuda" if torch.cuda.is_available() else "cpu")
 
     # Instantiate the handler
     # Configure ReplyOnStopWords with the handler's echo method and stop words

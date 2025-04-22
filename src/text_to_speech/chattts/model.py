@@ -1,4 +1,4 @@
-from typing import Literal, Optional, Protocol, Tuple, Union
+from typing import Literal
 from functools import lru_cache
 from collections.abc import AsyncGenerator, Generator
 import os
@@ -10,6 +10,7 @@ import torchaudio
 import librosa
 import soundfile as sf
 from logging import getLogger
+from text_to_speech import TTSModel, TTSOptions
 
 logger = getLogger(__name__)
 
@@ -26,42 +27,6 @@ def load_audio(path: str, target_sr: int) -> NDArray[np.float32]:
         audio_data = librosa.resample(audio_data, orig_sr=file_sr, target_sr=target_sr)
     # 确保返回float32类型
     return audio_data.astype(np.float32)
-
-class TTSOptions:
-    """
-    Options for Text-to-Speech synthesis.
-    """
-    stream: bool = False
-    lang: Optional[str] = None
-    skip_refine_text: bool = False
-    refine_text_only: bool = False
-    use_decoder: bool = True
-    do_text_normalization: bool = True
-    do_homophone_replacement: bool = False
-    params_refine_text: Optional[Chat.RefineTextParams] = None
-    params_infer_code: Optional[Chat.InferCodeParams] = None
-
-    def __init__(self):
-        # 初始化必要的参数
-        self.params_refine_text = Chat.RefineTextParams()
-        self.params_refine_text.prompt = ""  # 添加空的 prompt
-        self.params_infer_code = Chat.InferCodeParams()
-
-class TTSModel(Protocol):
-    def tts(
-        self, text: str, options: TTSOptions | None = None
-    ) -> tuple[int, NDArray[np.float32 | np.int16]]: 
-        pass
-
-    async def stream_tts(
-        self, text: str, options: TTSOptions | None = None
-    ) -> AsyncGenerator[tuple[int, NDArray[np.float32 | np.int16]], None]: 
-        pass
-    
-    def stream_tts_sync(
-        self, text: str, options: TTSOptions | None = None
-    ) -> Generator[tuple[int, NDArray[np.float32 | np.int16]], None, None]:
-        pass
 
 SCRIPT_DIR = os.path.dirname(__file__)
            
@@ -84,7 +49,6 @@ class ChatModelTTS(TTSModel):
         self,
         model: MODEL_OPTIONS = "2Noise/ChatTTS",
         device: str = "cpu",
-        voice: str = "zhitian_emo",
     ):
         """
         Initialize the Sambert TTS model.
@@ -93,17 +57,9 @@ class ChatModelTTS(TTSModel):
             model: Model to use, options:
                 - "ModelM/ChatTTS-ModelScope": ChatTTS模型
             device: Device to run inference on ('cpu', 'cuda', 'mps')
-            voice: Voice to use, options:
-                - zhitian_emo: 知天（情感）
-                - zhizhe_emo: 知哲（情感）
-                - zhibei_emo: 知贝（情感）
-                - zhiya_emo: 知雅（情感）
-                - zhiling_emo: 知灵（情感）
-                - zhimeng_emo: 知萌（情感）
         """
         self.model_id = model
         self.device = device
-        self.voice = voice
         self.model_path = os.path.join(".huggingface", self.model_id)
         self.model: Chat | None = None
         self.default_speaker_embedding = None
@@ -300,7 +256,7 @@ def get_tts_model(
      
 if __name__ == "__main__":
     m = get_tts_model()
-    sample_rate, audio_data = m.tts("你好，我是老六，一个会自由行走的六足机器人，我可以跟随你走，也可以跟你聊天哦")
+    sample_rate, audio_data = m.tts("你好，我是ChatTTS，一个强大的语音合成模型！")
     
     # 将音频数据转换为正确维度的 torch tensor
     audio_tensor = torch.from_numpy(audio_data).float()
