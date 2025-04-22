@@ -67,12 +67,22 @@ class MegaTTSModel(TTSModel):
         logger.info("Text input: %s", str(text))
 
         # Detect language
-        language_type = classify_language(text)
-        if language_type not in ["zh", "zh-cn", "en"]:
+        try:
+            language_type = classify_language(text)
+        except Exception as e:
+            logger.error(f"Error detecting language: {e}")
+            language_type = "unknown"
+        
+        logger.info(f"Unsupported language detected: {language_type}")
+        
+        if language_type not in ["zh-cn", "zh", "en-us", "en"]:
             raise ValueError(f"Unsupported language detected: {language_type}")
         
-        if language_type == "zh-cn":
+        if language_type in ["zh-cn", "zh"]:
             language_type = "zh"
+            
+        elif language_type in ["en-us", "en"]:
+            language_type = "en"
             
         language_npy_path = os.path.join(SCRIPT_DIR, f"{language_type}_prompt.npy")
         language_wav_path = os.path.join(SCRIPT_DIR, f"{language_type}_prompt.wav")
@@ -172,4 +182,5 @@ def get_tts_model(
     Returns:
         A MegaTTSModel instance
     """
+    logger.info(f"Creating MegaTTSModel on {device}")
     return MegaTTSModel(device=device)
