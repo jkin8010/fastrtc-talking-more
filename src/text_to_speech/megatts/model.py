@@ -65,6 +65,11 @@ class MegaTTSModel(TTSModel):
             options = TTSOptions()
 
         logger.info("Text input: %s", str(text))
+        
+        # 检查文本是否为空
+        if not text or text.strip() == "":
+            logger.warning("Empty text input, returning empty audio array")
+            return 24000, np.zeros(1024, dtype=np.float32)  # 返回一小段静音
 
         # Detect language
         try:
@@ -73,17 +78,13 @@ class MegaTTSModel(TTSModel):
             logger.error(f"Error detecting language: {e}")
             language_type = "unknown"
         
-        logger.info(f"Unsupported language detected: {language_type}")
+        logger.info(f"Language detected: {language_type}")
+        if language_type not in ["en", "en-us", "en-gb", "zh", "zh-cn", "zh-tw", "zh-yue", "zh-wyw", "zh-classical", "zh-min-nan", "zh-wuu", "zh-vietnamese"]:
+            logger.warning(f"Unsupported language detected: {language_type}")
+            return 24000, np.zeros(1024, dtype=np.float32)  # 返回一小段静音
         
-        if language_type not in ["zh-cn", "zh", "en-us", "en"]:
-            raise ValueError(f"Unsupported language detected: {language_type}")
+        language_type = "zh" if language_type in ["zh-cn", "zh-tw", "zh-yue", "zh-wyw", "zh-classical", "zh-min-nan", "zh-wuu", "zh-vietnamese"] else "en"
         
-        if language_type in ["zh-cn", "zh"]:
-            language_type = "zh"
-            
-        elif language_type in ["en-us", "en"]:
-            language_type = "en"
-            
         language_npy_path = os.path.join(SCRIPT_DIR, f"{language_type}_prompt.npy")
         language_wav_path = os.path.join(SCRIPT_DIR, f"{language_type}_prompt.wav")
         if not os.path.exists(language_npy_path):
@@ -118,8 +119,23 @@ class MegaTTSModel(TTSModel):
         # 强制设置 stream 为 True 以便 tts 返回生成器
         options.stream = True
             
+        # 检查文本是否为空
+        if not text or text.strip() == "":
+            logger.warning("Empty text input in async stream_tts, returning silent audio")
+            # 返回一段静音
+            silence = np.zeros(1024, dtype=np.float32)
+            yield 24000, silence
+            return
+            
         logger.info(f"Start voice inference {text}.")
         sample_rate, wav_generator = self.tts(text, options)
+
+        # 检查是否得到了有效的音频数据
+        if isinstance(wav_generator, np.ndarray) and (wav_generator.size == 0 or np.max(np.abs(wav_generator)) < 1e-6):
+            logger.warning("No valid audio data returned from TTS in async stream, returning silent audio")
+            silence = np.zeros(1024, dtype=np.float32)
+            yield 24000, silence
+            return
 
         # 直接迭代 tts 返回的生成器
         for wav_chunk in wav_generator:
@@ -144,8 +160,23 @@ class MegaTTSModel(TTSModel):
             options = TTSOptions()
         # 强制设置 stream 为 True 以便 tts 返回生成器
         options.stream = True
+        
+        # 检查文本是否为空
+        if not text or text.strip() == "":
+            logger.warning("Empty text input in stream_tts_sync, returning silent audio")
+            # 返回一段静音
+            silence = np.zeros(1024, dtype=np.float32)
+            yield 24000, silence
+            return
             
         sample_rate, wav_array = self.tts(text, options)
+        
+        # 检查是否得到了有效的音频数据
+        if wav_array.size == 0 or np.max(np.abs(wav_array)) < 1e-6:
+            logger.warning("No valid audio data returned from TTS, returning silent audio")
+            silence = np.zeros(1024, dtype=np.float32)
+            yield 24000, silence
+            return
         
         # 确保音频数据是平面格式，形状为 (samples,)
         if wav_array.ndim > 1:
