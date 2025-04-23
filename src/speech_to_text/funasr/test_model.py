@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 def test_funasr():
     # 使用相对于脚本目录的路径
-    audio_path = os.path.join(SCRIPT_DIR, "..", "..", "asr_example_zh.wav")
+    audio_path = os.path.join(SCRIPT_DIR, "..", "..", "asr_example.wav")
     audio_data, sample_rate = sf.read(audio_path)
     
     # 获取模型实例

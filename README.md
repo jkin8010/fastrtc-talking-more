@@ -1,4 +1,4 @@
-# FastRTC 中文大模型对话示例
+# FastRTC 中文大模型对话
 
 基于 FastRTC、FunASR、MegaTTS 和 Qwen2.5 的实时语音对话应用。
 

@@ -7,6 +7,7 @@ import torch
 import asyncio
 import numpy as np
 from fastrtc import (ReplyOnPause, Stream)
+from pause_detection.fsmn.model import get_fsmn_vad_model
 from text_to_speech.megatts.model import get_tts_model, TTSModel
 from speech_to_text.funasr.model import get_stt_model, STTModel
 from openai import OpenAI
@@ -179,6 +180,7 @@ class EchoHandler:
             return iter([])
 
 def main():
+    # Configure logging
     root_logger = logging.getLogger()
     root_logger.setLevel(logging.INFO)
 
@@ -193,6 +195,12 @@ def main():
     stdout_handler.setFormatter(formatter)
 
     root_logger.addHandler(stdout_handler)
+    
+    # 设置第三方库的日志级别，避免过多噪音
+    logging.getLogger('aioice').setLevel(logging.INFO)
+    logging.getLogger('aiohttp').setLevel(logging.INFO)
+    logging.getLogger('modelscope').setLevel(logging.INFO)
+    logging.getLogger('funasr').setLevel(logging.INFO)
 
     # logger.info("Logging configured test message.") # Keep or remove as needed
 
@@ -200,6 +208,7 @@ def main():
         api_key=os.getenv("OLLAMA_API_KEY", "ollama"), # Corrected typo: ollam -> ollama
         base_url=os.getenv("OLLAMA_API_URL", "http://localhost:11434/v1/"),
     )
+    fsmn_vad_model = get_fsmn_vad_model()
     stt_model = get_stt_model()
     tts_model = get_tts_model(device="cuda" if torch.cuda.is_available() else "cpu")
 
@@ -211,7 +220,7 @@ def main():
     stream = Stream(
         ReplyOnPause(
             fn=echo_handler.echo,
-            model=None,
+            model=fsmn_vad_model,
             can_interrupt=True,
         ),
         modality="audio",

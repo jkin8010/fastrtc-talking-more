@@ -1,10 +1,12 @@
 from .protocol import ModelOptions, PauseDetectionModel
-from .silero import SileroVADModel, SileroVadOptions, get_silero_model
+from .fsmn.model import FSMNVADModel, FSMNVadOptions, get_fsmn_vad_model
 
 __all__ = [
-    "SileroVADModel",
-    "SileroVadOptions",
+    "FSMNVADModel",
+    "FSMNVadOptions",
     "PauseDetectionModel",
     "ModelOptions",
-    "get_silero_model",
+    "get_fsmn_vad_model",
 ]
+
+# pause_detection 模块

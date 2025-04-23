@@ -58,7 +58,7 @@ class FunASRSTT(STTModel):
         
         self.model = AutoModel(
             model=self.model_id, 
-            vad_model=self.vad_model, 
+            # vad_model=self.vad_model, 
             vad_kwargs={"max_single_segment_time": 60000},
             punc_model="ct-punc", 
             # spk_model="cam++",
