@@ -76,6 +76,7 @@ class FunASRSTT(STTModel):
             Transcribed text as string
         """
         sample_rate, audio_np = audio
+        
         target_sample_rate = 16000 # FunASR 模型期望的采样率
         
         # 如果开启调试模式，保存原始输入数据

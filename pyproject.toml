@@ -38,6 +38,10 @@ dependencies = [
     "x-transformers==1.44.4",
     "torchdiffeq==0.2.5",
     "openai-whisper==20240930",
+    "dotenv>=0.9.9",
+    "twilio>=9.5.2",
+    "ultralytics>=8.3.115",
+    "opencv-python>=4.11.0.86",
 ]
 
 [project.scripts]

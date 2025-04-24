@@ -1,20 +1,30 @@
+import json
 import os
 import logging
 import sys
 import re
-import time
+from aiortc import RTCConfiguration, RTCIceServer
+from fastapi import FastAPI
+from fastapi.responses import HTMLResponse, StreamingResponse
+from pydantic import BaseModel
 import torch
-import asyncio
+import gradio as gr
 import numpy as np
-from fastrtc import (ReplyOnPause, Stream)
+from fastrtc import (ReplyOnPause, Stream, get_twilio_turn_credentials)
+import uvicorn
 from pause_detection.fsmn.model import get_fsmn_vad_model
 from text_to_speech.megatts.model import get_tts_model, TTSModel
 from speech_to_text.funasr.model import get_stt_model, STTModel
 from openai import OpenAI
 from logging import getLogger
+from typing import List, Dict, Optional
+from dotenv import load_dotenv
+
+load_dotenv()
 
 logger = getLogger(__name__)
 
+PUBLIC_DIR = os.path.join(os.path.dirname(__file__), "..", "public")
 
 max_threads = max(min(torch.get_num_threads(), torch.get_num_interop_threads()) - 2, 1)
 print(max_threads)
@@ -28,6 +38,16 @@ os.environ["NUMEXPR_NUM_THREADS"] = str(max_threads)
 # 设置 PyTorch 线程数
 torch.set_num_threads(max_threads)
 torch.set_num_interop_threads(1)
+
+
+class Message(BaseModel):
+    role: str
+    content: str
+
+
+class InputData(BaseModel):
+    webrtc_id: str
+    chatbot: list[Message]
 
 
 def clean_text_for_tts(text):
@@ -64,7 +84,7 @@ class EchoHandler:
         self.llm_client: OpenAI = llm_client
         self.logger = getLogger(__name__ + ".EchoHandler")
 
-    def echo(self, audio):
+    def echo(self, audio, chatbot: Optional[List[Dict]] = None):
         """
         Handles audio input: performs STT, calls LLM, performs TTS, and yields audio output.
         Relies on fastrtc's can_interrupt=True for handling interruptions.
@@ -78,9 +98,17 @@ class EchoHandler:
                 self.logger.warning("STT result is empty or whitespace, skipping LLM call.")
                 return iter([])
 
+            # 更新 chatbot 历史记录
+            if chatbot is None:
+                chatbot = []
+            chatbot.append({"role": "user", "content": prompt})
+
+            # 准备 LLM 消息
+            messages = [{"role": d["role"], "content": d["content"]} for d in chatbot]
+
             response_stream = self.llm_client.chat.completions.create(
                 model="qwen2.5",
-                messages=[{"role": "user", "content": prompt}],
+                messages=messages,
                 stream=True
             )
 
@@ -172,11 +200,13 @@ class EchoHandler:
                     self.logger.error(f"Error processing final segment in TTS: {e}", exc_info=True)
                     # 发生错误时继续，不中断流程
             
+            # 更新 chatbot 历史记录
+            chatbot.append({"role": "assistant", "content": buffer_str})
+            
             self.logger.info("Finished TTS stream.")
             
         except Exception as e:
             self.logger.error(f"Error during echo processing: {e}", exc_info=True)
-            
             return iter([])
 
 def main():
@@ -208,7 +238,7 @@ def main():
         api_key=os.getenv("OLLAMA_API_KEY", "ollama"), # Corrected typo: ollam -> ollama
         base_url=os.getenv("OLLAMA_API_URL", "http://localhost:11434/v1/"),
     )
-    fsmn_vad_model = get_fsmn_vad_model()
+    # fsmn_vad_model = get_fsmn_vad_model()
     stt_model = get_stt_model()
     tts_model = get_tts_model(device="cuda" if torch.cuda.is_available() else "cpu")
 
@@ -217,19 +247,55 @@ def main():
     echo_handler = EchoHandler(stt_model, tts_model, llm_client)
     echo_handler.stop_word_detected = lambda text: text.find("等一下") != -1
 
+    chatbot = gr.Chatbot(type="messages")
     stream = Stream(
         ReplyOnPause(
             fn=echo_handler.echo,
-            model=fsmn_vad_model,
             can_interrupt=True,
         ),
         modality="audio",
         mode="send-receive",
+        additional_outputs_handler=lambda a, b: b,
+        additional_inputs=[chatbot],
+        additional_outputs=[chatbot],
     )
 
     logger.info("Starting Gradio UI.")
+    logger.info(f"Gradio UI API: {stream.ui.get_api_info(all_endpoints=True)}")
+
     # Consider adding debug=True for Gradio development/testing if helpful
-    stream.ui.launch(share=True, server_name="0.0.0.0", server_port=7860) # share=True makes it accessible publicly
+    app = FastAPI()
+    stream.mount(app)
+        
+    @app.get("/")
+    async def _():
+        html_content = open(os.path.join(PUBLIC_DIR, "index.html"), "r").read()
+        html_content = html_content.replace("__RTC_CONFIGURATION__", "{}")
+        return HTMLResponse(content=html_content, status_code=200)
+
+
+    @app.post("/input_hook")
+    async def _(body: InputData):
+        stream.set_input(body.webrtc_id, body.model_dump()["chatbot"])
+        return {"status": "ok"}
+
+
+    @app.get("/outputs")
+    def _(webrtc_id: str):
+        async def output_stream():
+            async for output in stream.output_stream(webrtc_id):
+                chatbot = output.args[0]
+                yield f"event: output\ndata: {json.dumps(chatbot[-1])}\n\n"
+
+        return StreamingResponse(output_stream(), media_type="text/event-stream")
+   
+    if (mode := os.getenv("MODE")) == "UI":
+        stream.ui.launch(server_port=7860, server_name="0.0.0.0")
+    elif mode == "PHONE":
+        stream.fastphone(host="0.0.0.0", port=7860)
+    else:
+        uvicorn.run(app, host="0.0.0.0", port=7860)
+
 
 if __name__ == "__main__":
     main()
