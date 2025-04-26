@@ -14,14 +14,16 @@
             padding: 20px;
             height: 100vh;
             box-sizing: border-box;
+            overflow: hidden;
         }
 
         .container {
             display: flex;
             flex-direction: column;
             gap: 20px;
-            height: calc(100% - 100px);
+            height: calc(100% - 30px);
             margin-bottom: 20px;
+            overflow: hidden;
         }
 
         .chat-container {
@@ -31,6 +33,7 @@
             flex-direction: column;
             flex-grow: 1;
             box-sizing: border-box;
+            overflow: hidden;
         }
 
         .controls-container {
@@ -41,6 +44,7 @@
             gap: 20px;
             height: 128px;
             box-sizing: border-box;
+            overflow: hidden;
         }
 
         .visualization-container {
@@ -54,6 +58,7 @@
             justify-content: space-between;
             height: 64px;
             width: 100%;
+            overflow: hidden;
         }
 
         .box {
@@ -62,10 +67,11 @@
             background: #00ff00;
             border-radius: 8px;
             transition: transform 0.05s ease;
+            overflow: hidden;
         }
 
         .chat-messages {
-            flex-grow: 1;
+            flex: 1;
             overflow-y: auto;
             margin-bottom: 20px;
             padding: 10px;
@@ -82,8 +88,18 @@
             background-color: #003300;
         }
 
+        .message.user::before {
+            content: "You: ";
+            color: #00ff00;
+        }
+
         .message.assistant {
             background-color: #002200;
+        }
+
+        .message.assistant::before {
+            content: "Assistant: ";
+            color: #00ff00;
         }
 
         button {

@@ -3,14 +3,13 @@ import os
 import logging
 import sys
 import re
-from aiortc import RTCConfiguration, RTCIceServer
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 import torch
 import gradio as gr
 import numpy as np
-from fastrtc import (ReplyOnPause, Stream, get_twilio_turn_credentials)
+from fastrtc import (AdditionalOutputs, ReplyOnPause, Stream)
 import uvicorn
 from pause_detection.fsmn.model import get_fsmn_vad_model
 from text_to_speech.megatts.model import get_tts_model, TTSModel
@@ -47,7 +46,7 @@ class Message(BaseModel):
 
 class InputData(BaseModel):
     webrtc_id: str
-    chatbot: list[Message]
+    chatbot: List[Message]
 
 
 def clean_text_for_tts(text):
@@ -101,11 +100,12 @@ class EchoHandler:
             # 更新 chatbot 历史记录
             if chatbot is None:
                 chatbot = []
-            chatbot.append({"role": "user", "content": prompt})
-
+            chatbot.append({"role": "user", "content": re.sub(r'([\u4e00-\u9fff])\s+([\u4e00-\u9fff])', r'\1\2', prompt)})
+            yield AdditionalOutputs(chatbot)
+            
             # 准备 LLM 消息
-            messages = [{"role": d["role"], "content": d["content"]} for d in chatbot]
-
+            messages = [{"role": d["role"], "content": re.sub(r'([\u4e00-\u9fff])\s+([\u4e00-\u9fff])', r'\1\2', d["content"])} if isinstance(d, dict) else d for d in chatbot]
+            
             response_stream = self.llm_client.chat.completions.create(
                 model="qwen2.5",
                 messages=messages,
@@ -167,6 +167,10 @@ class EchoHandler:
                                 segment = parts[i]
                                 if segment:  # 确保部分不为空
                                     segment_to_process = segment + mark
+                                    # 更新 chatbot 历史记录
+                                    chatbot.append({"role": "assistant", "content": re.sub(r'([\u4e00-\u9fff])\s+([\u4e00-\u9fff])', r'\1\2', segment_to_process)})
+                                
+                                    yield AdditionalOutputs(chatbot)
                                     # 清理文本中的Markdown特殊字符
                                     segment_to_process = clean_text_for_tts(segment_to_process)
                                     self.logger.debug(f"Processing segment during streaming: '{segment_to_process}'")
@@ -189,10 +193,15 @@ class EchoHandler:
                 # 如果末尾没有标点，添加一个句号
                 if not any(buffer_str.endswith(mark) for mark in punctuation_marks):
                     buffer_str += "。"
-                
+               
+                # 更新 chatbot 历史记录
+                chatbot.append({"role": "assistant", "content": re.sub(r'([\u4e00-\u9fff])\s+([\u4e00-\u9fff])', r'\1\2', buffer_str)})
+              
+                yield AdditionalOutputs(chatbot) 
                 # 清理文本中的Markdown特殊字符
                 buffer_str = clean_text_for_tts(buffer_str)
                 self.logger.debug(f"Processing final segment: '{buffer_str}'")
+                
                 try:
                     for audio_chunk in self.tts_model.stream_tts_sync(buffer_str):
                         yield audio_chunk
@@ -200,11 +209,8 @@ class EchoHandler:
                     self.logger.error(f"Error processing final segment in TTS: {e}", exc_info=True)
                     # 发生错误时继续，不中断流程
             
-            # 更新 chatbot 历史记录
-            chatbot.append({"role": "assistant", "content": buffer_str})
-            
-            self.logger.info("Finished TTS stream.")
-            
+            self.logger.info("Finished TTS stream.")  
+                
         except Exception as e:
             self.logger.error(f"Error during echo processing: {e}", exc_info=True)
             return iter([])
@@ -276,7 +282,7 @@ def main():
 
     @app.post("/input_hook")
     async def _(body: InputData):
-        stream.set_input(body.webrtc_id, body.model_dump()["chatbot"])
+        stream.set_input(body.webrtc_id, body.chatbot)
         return {"status": "ok"}
 
 
