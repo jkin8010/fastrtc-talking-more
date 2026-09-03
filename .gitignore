@@ -21,3 +21,5 @@ audio_debug/
 .huggingface/
 
 # Local model weights
+
+.DS_Store
