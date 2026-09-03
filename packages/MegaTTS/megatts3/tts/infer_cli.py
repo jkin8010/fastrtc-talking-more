@@ -229,7 +229,12 @@ class MegaTTS3DiTInfer():
                 
                 inputs = prepare_inputs_for_dit(self, mel2ph_ref, mel2ph_pred, ph_ref, tone_ref, ph_pred, tone_pred, vae_latent)
                 # Speech dit inference
-                with torch.cuda.amp.autocast(dtype=self.precision, enabled=True):
+                autocast_enabled = self.device in {'cuda', 'mps'}
+                with torch.autocast(
+                    device_type=self.device,
+                    dtype=self.precision,
+                    enabled=autocast_enabled,
+                ):
                     x = self.dit.inference(inputs, timesteps=time_step, seq_cfg_w=[p_w, t_w]).float()
                 
                 # WavVAE decode

@@ -10,7 +10,7 @@ from megatts3.tts.utils.audio_utils.io import save_wav, to_wav_bytes
 from langdetect import detect as classify_language
 from megatts3.tts.infer_cli import MegaTTS3DiTInfer
 from text_to_speech import TTSModel, TTSOptions
-from modelscope import snapshot_download
+from huggingface_hub import snapshot_download
 import librosa
 import io
 
@@ -47,16 +47,39 @@ class MegaTTSModel(TTSModel):
         """
         self.device = device
         
-        self.checkpoint_path = os.path.join(HUGGINGFACE_CACHE, "ByteDance", "MegaTTS3")
-        if not os.path.exists(self.checkpoint_path):
-            snapshot_download(
-                model_id="ByteDance/MegaTTS3",
-                cache_dir=HUGGINGFACE_CACHE,
+        self.checkpoint_path = os.getenv(
+            "MEGATTS_CHECKPOINT_PATH",
+            os.path.join(HUGGINGFACE_CACHE, "ByteDance", "MegaTTS3"),
+        )
+        # ModelScope leaves a .mdl marker when a download fails. Treat that
+        # directory as incomplete and retry from the official Hugging Face repo.
+        download_marker = os.path.join(self.checkpoint_path, ".mdl")
+        if not os.path.exists(self.checkpoint_path) or os.path.exists(download_marker):
+            hf_endpoint = os.getenv("HF_ENDPOINT", "https://huggingface.co")
+            logger.info(
+                "Downloading MegaTTS3 from %s to %s",
+                hf_endpoint,
+                self.checkpoint_path,
             )
+            try:
+                snapshot_download(
+                    repo_id="ByteDance/MegaTTS3",
+                    local_dir=self.checkpoint_path,
+                    endpoint=hf_endpoint,
+                )
+            except Exception as exc:
+                raise RuntimeError(
+                    "无法下载 MegaTTS3 模型。请检查网络/代理，或在 .env 中配置 "
+                    "HF_ENDPOINT（例如 https://hf-mirror.com），也可以使用 "
+                    "MEGATTS_CHECKPOINT_PATH 指向已下载的模型目录。"
+                ) from exc
         logger.info(f"Loading MegaTTS model from {self.checkpoint_path} on {self.device}")
         
         # Initialize the MegaTTS inference instance
-        self.infer_instance = MegaTTS3DiTInfer(ckpt_root=self.checkpoint_path)
+        self.infer_instance = MegaTTS3DiTInfer(
+            device=self.device,
+            ckpt_root=self.checkpoint_path,
+        )
 
     def tts(
         self, text: str, options: TTSOptions | None = None
@@ -93,7 +116,13 @@ class MegaTTSModel(TTSModel):
         with open(language_wav_path, 'rb') as file:
             wav_content = file.read()
         
-        resource_context = self.infer_instance.preprocess(wav_content, latent_file=language_npy_path)
+        logger.info("Preparing MegaTTS prompt on %s", self.device)
+        resource_context = self.infer_instance.preprocess(
+            wav_content,
+            latent_file=language_npy_path,
+        )
+        logger.info("MegaTTS prompt preparation completed")
+        logger.info("Starting MegaTTS inference on %s", self.device)
         wav_bytes = self.infer_instance.forward(
             resource_context,
             text,
@@ -101,13 +130,24 @@ class MegaTTSModel(TTSModel):
             p_w=options.p_w,
             t_w=options.t_w,
         )
+        logger.info("MegaTTS inference completed: %d WAV bytes", len(wav_bytes))
 
         # 使用 librosa 加载音频数据，确保正确的采样率
         wav_array, sr = librosa.load(io.BytesIO(wav_bytes), sr=24000)
-        
+        if wav_array.size == 0:
+            raise RuntimeError("MegaTTS returned an empty WAV file")
+
         # 音频归一化
-        wav_array = wav_array / np.max(np.abs(wav_array))
-        wav_array = wav_array * 0.95  # 避免削波
+        peak = np.max(np.abs(wav_array))
+        if not np.isfinite(peak) or peak <= 1e-8:
+            raise RuntimeError("MegaTTS returned silent or invalid audio")
+        wav_array = wav_array / peak * 0.95  # 避免削波
+        logger.info(
+            "Decoded TTS audio: sample_rate=%d, samples=%d, peak=%.4f",
+            24000,
+            wav_array.size,
+            float(np.max(np.abs(wav_array))),
+        )
         
         return 24000, wav_array.astype(np.float32)
 
@@ -188,6 +228,7 @@ class MegaTTSModel(TTSModel):
         
         # 将音频数据分成小块
         chunk_size = 1024  # 可以根据需要调整块大小
+        chunk_count = 0
         for i in range(0, len(wav_array), chunk_size):
             chunk = wav_array[i:i + chunk_size]
             if len(chunk) < chunk_size:
@@ -198,7 +239,9 @@ class MegaTTSModel(TTSModel):
             chunk = chunk.reshape(-1)
             
             # 返回格式：(sample_rate, audio_data)
+            chunk_count += 1
             yield sample_rate, chunk
+        logger.info("Finished TTS audio stream: %d chunks", chunk_count)
 
 @lru_cache
 def get_tts_model(
