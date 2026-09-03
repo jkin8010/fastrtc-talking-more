@@ -6,6 +6,7 @@ import os
 import json
 import logging
 from pathlib import Path # 导入Path
+import pytest
 
 # 获取脚本所在的目录
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -13,6 +14,12 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+
+@pytest.mark.integration
+@pytest.mark.skipif(
+    os.getenv("RUN_MODEL_TESTS") != "1",
+    reason="FunASR integration tests require model downloads; set RUN_MODEL_TESTS=1 to run",
+)
 def test_funasr():
     # 使用相对于脚本目录的路径
     audio_path = os.path.join(SCRIPT_DIR, "..", "..", "asr_example.wav")
@@ -81,4 +88,4 @@ if __name__ == "__main__":
     elif args.analyze:
         analyze_audio_file(args.analyze)
     else:
-        test_funasr() 
+        test_funasr()

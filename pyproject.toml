@@ -52,6 +52,11 @@ start = "main:main"
 [dependency-groups]
 dev = ["pytest>=8.0"]
 
+[tool.pytest.ini_options]
+markers = [
+    "integration: tests that require downloaded external models",
+]
+
 [tool.uv.sources]
 chattts = { path = "./packages/ChatTTS/" }
 megatts3 = { path = "./packages/MegaTTS/", editable = true }
