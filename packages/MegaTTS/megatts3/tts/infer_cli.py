@@ -229,7 +229,10 @@ class MegaTTS3DiTInfer():
                 
                 inputs = prepare_inputs_for_dit(self, mel2ph_ref, mel2ph_pred, ph_ref, tone_ref, ph_pred, tone_pred, vae_latent)
                 # Speech dit inference
-                autocast_enabled = self.device in {'cuda', 'mps'}
+                # MPS float16 autocast can produce NaN/zero output on some
+                # Apple Silicon/PyTorch combinations. Keep MPS in float32;
+                # CUDA retains the performance optimization.
+                autocast_enabled = self.device == 'cuda'
                 with torch.autocast(
                     device_type=self.device,
                     dtype=self.precision,
@@ -244,10 +247,23 @@ class MegaTTS3DiTInfer():
                 ''' Post-processing '''
                 # Trim prompt wav
                 wav_pred = wav_pred[vae_latent.size(1)*self.vae_stride*self.hop_size:].cpu().numpy()
+                raw_peak = np.max(np.abs(wav_pred))
+                if not np.isfinite(raw_peak) or raw_peak <= 1e-8:
+                    raise RuntimeError(
+                        f"MegaTTS generated invalid audio before normalization "
+                        f"(peak={raw_peak!r}, device={self.device})"
+                    )
                 # Norm generated wav to prompt wav's level
                 meter = pyln.Meter(self.sr)  # create BS.1770 meter
                 loudness_pred = self.loudness_meter.integrated_loudness(wav_pred.astype(float))
-                wav_pred = pyln.normalize.loudness(wav_pred, loudness_pred, self.loudness_prompt)
+                if np.isfinite(loudness_pred) and np.isfinite(self.loudness_prompt):
+                    wav_pred = pyln.normalize.loudness(wav_pred, loudness_pred, self.loudness_prompt)
+                else:
+                    # Very quiet/invalid loudness measurements should not
+                    # turn an otherwise valid waveform into NaN or int16 zero.
+                    wav_pred = wav_pred / raw_peak * 0.95
+                if not np.isfinite(wav_pred).all():
+                    wav_pred = wav_pred / raw_peak * 0.95
                 if np.abs(wav_pred).max() >= 1:
                     wav_pred = wav_pred / np.abs(wav_pred).max() * 0.95
 

@@ -150,7 +150,13 @@ LLM 回复成功不代表 TTS 已经完成。请按日志顺序检查：
 
 如果日志停在 `Language detected`、`Preparing MegaTTS prompt` 或 `Starting MegaTTS inference`，通常是 MegaTTS 在 CPU 上运行较慢，并不是 LLM 没有回复。等待对应的完成日志；生产环境建议使用 CUDA。程序会自动选择 CUDA，其次选择 Apple MPS，最后使用 CPU。
 
-如果出现 `MegaTTS returned an empty WAV file` 或 `MegaTTS returned silent or invalid audio`，请检查 MegaTTS 模型目录、提示音文件，以及模型与当前 PyTorch/设备的兼容性。
+如果出现 `MegaTTS returned an empty WAV file` 或 `MegaTTS returned silent or invalid audio`，请检查 MegaTTS 模型目录、提示音文件，以及模型与当前 PyTorch/设备的兼容性。Apple Silicon 上如果出现 `generated invalid audio before normalization`，程序会自动使用 MPS 的 float32 推理；仍失败时可在支持 CUDA 的环境运行，或将日志中的设备信息一并提交排查。
+
+FunASR 集成测试需要下载并加载外部模型，默认不会在普通 `pytest` 中执行。确认网络和模型缓存可用后，可运行：
+
+```bash
+RUN_MODEL_TESTS=1 uv run pytest src/speech_to_text/funasr/test_model.py -v
+```
 
 ## 相关项目
 
