@@ -23,3 +23,4 @@ audio_debug/
 # Local model weights
 
 .DS_Store
+AGENTS.md

@@ -18,6 +18,7 @@ from openai import OpenAI
 from logging import getLogger
 from typing import List, Dict, Optional
 from dotenv import load_dotenv
+from llm import create_llm_client, load_llm_config
 
 load_dotenv()
 
@@ -77,10 +78,12 @@ def clean_text_for_tts(text):
 
 
 class EchoHandler:
-    def __init__(self, stt_model, tts_model, llm_client):
+    def __init__(self, stt_model, tts_model, llm_client, llm_model="deepseek/deepseek-v4-flash-0731", llm_request_options=None):
         self.stt_model: STTModel = stt_model
         self.tts_model: TTSModel = tts_model
         self.llm_client: OpenAI = llm_client
+        self.llm_model = llm_model
+        self.llm_request_options = llm_request_options or {}
         self.logger = getLogger(__name__ + ".EchoHandler")
 
     def echo(self, audio, chatbot: Optional[List[Dict]] = None):
@@ -107,9 +110,10 @@ class EchoHandler:
             messages = [{"role": d["role"], "content": re.sub(r'([\u4e00-\u9fff])\s+([\u4e00-\u9fff])', r'\1\2', d["content"])} if isinstance(d, dict) else d for d in chatbot]
             
             response_stream = self.llm_client.chat.completions.create(
-                model="qwen2.5",
+                model=self.llm_model,
                 messages=messages,
-                stream=True
+                stream=True,
+                **self.llm_request_options,
             )
 
             # Process LLM stream and collect full response
@@ -131,7 +135,7 @@ class EchoHandler:
                 if delta.content is None and delta.role is None and delta.function_call is None and delta.tool_calls is None:
                     empty_content_count += 1
                     # 如果连续多次收到空内容，认为是流结束
-                    if empty_content_count >= 3:
+                    if empty_content_count == 3:
                         received_end = True
                         self.logger.info("Detected end of stream after multiple empty deltas")
                     # 处理缓冲区内容，避免因空内容而中断
@@ -240,17 +244,28 @@ def main():
 
     # logger.info("Logging configured test message.") # Keep or remove as needed
 
-    llm_client = OpenAI(
-        api_key=os.getenv("OLLAMA_API_KEY", "ollama"), # Corrected typo: ollam -> ollama
-        base_url=os.getenv("OLLAMA_API_URL", "http://localhost:11434/v1/"),
-    )
+    llm_config = load_llm_config()
+    llm_client = create_llm_client(llm_config)
     # fsmn_vad_model = get_fsmn_vad_model()
     stt_model = get_stt_model()
-    tts_model = get_tts_model(device="cuda" if torch.cuda.is_available() else "cpu")
+    if torch.cuda.is_available():
+        tts_device = "cuda"
+    elif getattr(torch.backends, "mps", None) and torch.backends.mps.is_available():
+        tts_device = "mps"
+    else:
+        tts_device = "cpu"
+    logger.info("Selected TTS device: %s", tts_device)
+    tts_model = get_tts_model(device=tts_device)
 
     # Instantiate the handler
     # Configure ReplyOnStopWords with the handler's echo method and stop words
-    echo_handler = EchoHandler(stt_model, tts_model, llm_client)
+    echo_handler = EchoHandler(
+        stt_model,
+        tts_model,
+        llm_client,
+        llm_config.model,
+        llm_config.request_options,
+    )
     echo_handler.stop_word_detected = lambda text: text.find("等一下") != -1
 
     chatbot = gr.Chatbot(type="messages")
